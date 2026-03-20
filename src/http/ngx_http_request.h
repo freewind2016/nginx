@@ -24,6 +24,7 @@
 #define NGX_HTTP_VERSION_10                1000
 #define NGX_HTTP_VERSION_11                1001
 #define NGX_HTTP_VERSION_20                2000
+#define NGX_HTTP_VERSION_30                3000
 
 #define NGX_HTTP_UNKNOWN                   0x00000001
 #define NGX_HTTP_GET                       0x00000002
@@ -73,6 +74,7 @@
 #define NGX_HTTP_CONTINUE                  100
 #define NGX_HTTP_SWITCHING_PROTOCOLS       101
 #define NGX_HTTP_PROCESSING                102
+#define NGX_HTTP_EARLY_HINTS               103
 
 #define NGX_HTTP_OK                        200
 #define NGX_HTTP_CREATED                   201
@@ -93,6 +95,7 @@
 #define NGX_HTTP_FORBIDDEN                 403
 #define NGX_HTTP_NOT_FOUND                 404
 #define NGX_HTTP_NOT_ALLOWED               405
+#define NGX_HTTP_PROXY_AUTH_REQUIRED       407
 #define NGX_HTTP_REQUEST_TIME_OUT          408
 #define NGX_HTTP_CONFLICT                  409
 #define NGX_HTTP_LENGTH_REQUIRED           411
@@ -208,11 +211,12 @@ typedef struct {
 #endif
 
     ngx_table_elt_t                  *authorization;
+    ngx_table_elt_t                  *proxy_authorization;
 
     ngx_table_elt_t                  *keep_alive;
 
 #if (NGX_HTTP_X_FORWARDED_FOR)
-    ngx_array_t                       x_forwarded_for;
+    ngx_table_elt_t                  *x_forwarded_for;
 #endif
 
 #if (NGX_HTTP_REALIP)
@@ -231,10 +235,10 @@ typedef struct {
     ngx_table_elt_t                  *date;
 #endif
 
+    ngx_table_elt_t                  *cookie;
+
     ngx_str_t                         user;
     ngx_str_t                         passwd;
-
-    ngx_array_t                       cookies;
 
     ngx_str_t                         server;
     off_t                             content_length_n;
@@ -242,6 +246,8 @@ typedef struct {
 
     unsigned                          connection_type:2;
     unsigned                          chunked:1;
+    unsigned                          multi:1;
+    unsigned                          multi_linked:1;
     unsigned                          msie:1;
     unsigned                          msie6:1;
     unsigned                          opera:1;
@@ -269,8 +275,12 @@ typedef struct {
     ngx_table_elt_t                  *content_range;
     ngx_table_elt_t                  *accept_ranges;
     ngx_table_elt_t                  *www_authenticate;
+    ngx_table_elt_t                  *proxy_authenticate;
     ngx_table_elt_t                  *expires;
     ngx_table_elt_t                  *etag;
+
+    ngx_table_elt_t                  *cache_control;
+    ngx_table_elt_t                  *link;
 
     ngx_str_t                        *override_charset;
 
@@ -279,9 +289,6 @@ typedef struct {
     ngx_str_t                         charset;
     u_char                           *content_type_lowcase;
     ngx_uint_t                        content_type_hash;
-
-    ngx_array_t                       cache_control;
-    ngx_array_t                       link;
 
     off_t                             content_length_n;
     off_t                             content_offset;
@@ -302,6 +309,9 @@ typedef struct {
     ngx_chain_t                      *busy;
     ngx_http_chunked_t               *chunked;
     ngx_http_client_body_handler_pt   post_handler;
+    unsigned                          filter_need_buffering:1;
+    unsigned                          last_sent:1;
+    unsigned                          last_saved:1;
 } ngx_http_request_body_t;
 
 
@@ -322,6 +332,8 @@ typedef struct {
     ngx_int_t                         nbusy;
 
     ngx_chain_t                      *free;
+
+    ngx_msec_t                        keepalive_timeout;
 
     unsigned                          ssl:1;
     unsigned                          proxy_protocol:1;
@@ -446,10 +458,13 @@ struct ngx_http_request_s {
 
     ngx_http_connection_t            *http_connection;
     ngx_http_v2_stream_t             *stream;
+    ngx_http_v3_parse_t              *v3_parse;
 
     ngx_http_log_handler_pt           log_handler;
 
     ngx_http_cleanup_t               *cleanup;
+
+    in_port_t                         port;
 
     unsigned                          count:16;
     unsigned                          subrequests:8;
@@ -538,10 +553,12 @@ struct ngx_http_request_s {
     unsigned                          request_complete:1;
     unsigned                          request_output:1;
     unsigned                          header_sent:1;
+    unsigned                          response_sent:1;
     unsigned                          expect_tested:1;
     unsigned                          root_tested:1;
     unsigned                          done:1;
     unsigned                          logged:1;
+    unsigned                          terminated:1;
 
     unsigned                          buffered:4;
 
@@ -589,8 +606,6 @@ struct ngx_http_request_s {
     u_char                           *schema_end;
     u_char                           *host_start;
     u_char                           *host_end;
-    u_char                           *port_start;
-    u_char                           *port_end;
 
     unsigned                          http_minor:16;
     unsigned                          http_major:16;

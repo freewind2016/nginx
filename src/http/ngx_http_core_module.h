@@ -75,6 +75,7 @@ typedef struct {
     unsigned                   wildcard:1;
     unsigned                   ssl:1;
     unsigned                   http2:1;
+    unsigned                   quic:1;
 #if (NGX_HAVE_INET6)
     unsigned                   ipv6only:1;
 #endif
@@ -86,6 +87,8 @@ typedef struct {
     int                        backlog;
     int                        rcvbuf;
     int                        sndbuf;
+    int                        type;
+    int                        protocol;
 #if (NGX_HAVE_SETFIB)
     int                        setfib;
 #endif
@@ -204,6 +207,7 @@ typedef struct {
 #if (NGX_PCRE)
     unsigned                    captures:1;
 #endif
+    unsigned                    allow_connect:1;
 
     ngx_http_core_loc_conf_t  **named_locations;
 } ngx_http_core_srv_conf_t;
@@ -237,6 +241,7 @@ struct ngx_http_addr_conf_s {
 
     unsigned                   ssl:1;
     unsigned                   http2:1;
+    unsigned                   quic:1;
     unsigned                   proxy_protocol:1;
 };
 
@@ -266,6 +271,7 @@ typedef struct {
 
 typedef struct {
     ngx_int_t                  family;
+    ngx_int_t                  type;
     in_port_t                  port;
     ngx_array_t                addrs;     /* array of ngx_http_conf_addr_t */
 } ngx_http_conf_port_t;
@@ -273,6 +279,10 @@ typedef struct {
 
 typedef struct {
     ngx_http_listen_opt_t      opt;
+
+    unsigned                   protocols:3;
+    unsigned                   protocols_set:1;
+    unsigned                   protocols_changed:1;
 
     ngx_hash_t                 hash;
     ngx_hash_wildcard_t       *wc_head;
@@ -362,6 +372,7 @@ struct ngx_http_core_loc_conf_s {
     ngx_msec_t    send_timeout;            /* send_timeout */
     ngx_msec_t    keepalive_time;          /* keepalive_time */
     ngx_msec_t    keepalive_timeout;       /* keepalive_timeout */
+    ngx_msec_t    keepalive_min_timeout;   /* keepalive_min_timeout */
     ngx_msec_t    lingering_time;          /* lingering_time */
     ngx_msec_t    lingering_timeout;       /* lingering_timeout */
     ngx_msec_t    resolver_timeout;        /* resolver_timeout */
@@ -421,6 +432,8 @@ struct ngx_http_core_loc_conf_s {
     ngx_http_complex_value_t  *disable_symlinks_from;
 #endif
 
+    ngx_array_t  *early_hints;             /* early_hints */
+
     ngx_array_t  *error_pages;             /* error_page */
 
     ngx_path_t   *client_body_temp_path;   /* client_body_temp_path */
@@ -463,8 +476,8 @@ struct ngx_http_location_tree_node_s {
     ngx_http_core_loc_conf_t        *exact;
     ngx_http_core_loc_conf_t        *inclusive;
 
+    u_short                          len;
     u_char                           auto_redirect;
-    u_char                           len;
     u_char                           name[1];
 };
 
@@ -502,8 +515,8 @@ ngx_int_t ngx_http_gzip_ok(ngx_http_request_t *r);
 
 
 ngx_int_t ngx_http_subrequest(ngx_http_request_t *r,
-    ngx_str_t *uri, ngx_str_t *args, ngx_http_request_t **sr,
-    ngx_http_post_subrequest_t *psr, ngx_uint_t flags);
+    ngx_str_t *uri, ngx_str_t *args, ngx_http_request_t **psr,
+    ngx_http_post_subrequest_t *ps, ngx_uint_t flags);
 ngx_int_t ngx_http_internal_redirect(ngx_http_request_t *r,
     ngx_str_t *uri, ngx_str_t *args);
 ngx_int_t ngx_http_named_location(ngx_http_request_t *r, ngx_str_t *name);
@@ -529,8 +542,10 @@ ngx_int_t ngx_http_set_disable_symlinks(ngx_http_request_t *r,
     ngx_http_core_loc_conf_t *clcf, ngx_str_t *path, ngx_open_file_info_t *of);
 
 ngx_int_t ngx_http_get_forwarded_addr(ngx_http_request_t *r, ngx_addr_t *addr,
-    ngx_array_t *headers, ngx_str_t *value, ngx_array_t *proxies,
+    ngx_table_elt_t *headers, ngx_str_t *value, ngx_array_t *proxies,
     int recursive);
+
+ngx_int_t ngx_http_link_multi_headers(ngx_http_request_t *r);
 
 
 extern ngx_module_t  ngx_http_core_module;
